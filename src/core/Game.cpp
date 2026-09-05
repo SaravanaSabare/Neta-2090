@@ -57,9 +57,10 @@ int Game::runHeadless() {
         }
     }
 
-    std::printf("WORLD GENERATED seed=%llu districts=%d factions=%zu npcs=%zu traces=%d\n",
+    std::printf("WORLD GENERATED seed=%llu districts=%d places=%zu factions=%zu npcs=%zu traces=%d\n",
                 static_cast<unsigned long long>(sim.seed()), sim.world().districtCount(),
-                sim.factions().size(), sim.npcs().size(), sim.tracesFound());
+                sim.world().locations().size(), sim.factions().size(), sim.npcs().size(),
+                sim.tracesFound());
     for (int i = 0; i < m_config.headlessTicks; ++i) {
         sim.tick(sim::Simulation::kTickDt);
         // Spec-style debug feed: one line per tick a future debugger can diff.

@@ -30,6 +30,12 @@ public:
     const std::string& currentAction() const { return m_currentAction; }
     void setCurrentAction(const std::string& action) { m_currentAction = action; }
 
+    // Static identity from the "pop" stream (rebuilt from seed, not saved).
+    const std::string& occupation() const { return m_occupation; }
+    void setOccupation(const std::string& occupation) { m_occupation = occupation; }
+    int homeLocation() const { return m_homeLocation; }
+    void setHomeLocation(int locationId) { m_homeLocation = locationId; }
+
     // Deterministic idle behavior: small random walk. Uses the simulation's
     // event stream, so identical seeds + tick counts give identical motion.
     void wander(core::RngStream& rng, float dt);
@@ -40,6 +46,8 @@ private:
     float m_lx = 0.5f;
     float m_ly = 0.5f;
     std::string m_currentAction = "idle";
+    std::string m_occupation = "drifter";
+    int m_homeLocation = -1;
 };
 
 }  // namespace neta::entities

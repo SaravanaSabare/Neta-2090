@@ -160,6 +160,32 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
         }
     }
 
+    // Places: dim dots everywhere, names only in the player's district.
+    {
+        const int nLoc = sim.world().districtCount() > 0 ? sim.world().districtCount() : 1;
+        int here = static_cast<int>(sim.player().position().x / sim::Simulation::kAreaW * nLoc);
+        if (here < 0) {
+            here = 0;
+        }
+        if (here >= nLoc) {
+            here = nLoc - 1;
+        }
+        for (const auto& loc : sim.world().locations()) {
+            entities::Vec2 w{loc.x, loc.y};
+            const auto [sx, sy] = toScreen(w);
+            fillRect(sx - 1, sy - 1, 2, 2, kDim);
+            if (loc.district == here) {
+                drawText(loc.name, sx + 3, sy - 3, 1, kDim);
+            }
+        }
+        // Current district label with character (bottom-left of world area).
+        const auto& d = sim.world().district(here);
+        const char* rich = d.wealth > 66 ? "RICH" : (d.wealth < 33 ? "POOR" : "MIXED");
+        const char* busy = d.bustle > 66 ? "BUSY" : (d.bustle < 33 ? "QUIET" : "STEADY");
+        drawText(std::format("* {} - {} ({}/{})", d.name, d.note, rich, busy), ax + 4,
+                 ay + ah - 10, 1, kWhite);
+    }
+
     // NPCs: small white squares. Messenger (index 4) yellow when spawned.
     for (std::size_t i = 0; i < sim.npcs().size(); ++i) {
         const auto wp = sim.npcWorldPos(i);

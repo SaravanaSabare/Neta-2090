@@ -143,6 +143,32 @@ void Simulation::buildStaticContent(std::uint64_t seed) {
     }
     placeNear(3, m_erase.pos, -5.0f, 3.0f);
     placeNear(4, m_erase.pos, 5.0f, -3.0f);
+
+    // Population depth on its own stream: jobs + a home place in the NPC's
+    // own district. Static from the seed, so saves don't store it.
+    static constexpr const char* kJobs[] = {"COURIER", "MEDIC",   "FIXER",  "DOCKER",
+                                            "SPLICER", "VENDOR",  "DRIVER", "ARCHIVIST",
+                                            "COOK",    "WATCHER", "MUSICIAN"};
+    static constexpr std::size_t kJobCount = 11;
+    core::RngStream pop = rng.streamFor("pop");
+    for (std::size_t i = 0; i < m_npcs.size(); ++i) {
+        m_npcs[i].setOccupation(kJobs[pop.rangeIndex(kJobCount)]);
+        const int home = m_npcs[i].district();
+        int first = -1;
+        int count = 0;
+        for (const auto& loc : m_world.locations()) {
+            if (loc.district == home) {
+                if (first < 0) {
+                    first = loc.id;
+                }
+                ++count;
+            }
+        }
+        if (count > 0) {
+            m_npcs[i].setHomeLocation(first + static_cast<int>(pop.rangeIndex(
+                                                          static_cast<std::size_t>(count))));
+        }
+    }
 }
 
 void Simulation::tick(double dt) {
@@ -323,7 +349,8 @@ Simulation::InteractResult Simulation::interact() {
         const oneshot::NpcRole role =
             bi < m_roles.size() ? m_roles[bi] : oneshot::NpcRole::Walker;
         out.index = best;
-        out.speaker = std::string(m_npcs[bi].name()) + " (" + oneshot::roleName(role) + ")";
+        out.speaker = std::string(m_npcs[bi].name()) + ", " + m_npcs[bi].occupation() + " (" +
+                      oneshot::roleName(role) + ")";
         switch (role) {
             case oneshot::NpcRole::WitnessA:
                 out.kind = InteractKind::Talk;
@@ -354,12 +381,61 @@ Simulation::InteractResult Simulation::interact() {
                 pushEvent("PLAYER met the 3155 MESSENGER");
                 break;
             case oneshot::NpcRole::Walker:
-            default:
+            default: {
                 out.kind = InteractKind::Talk;
-                out.text = oneshot::walkerLine();
+                // True hint: name the district of the first still-hidden trace
+                // so explorers can navigate by talk. The liar still misleads.
+                const world::District* target = nullptr;
+                for (const auto& t : m_traces) {
+                    if (!t.found) {
+                        target = &m_world.district(t.district);
+                        break;
+                    }
+                }
+                if (target == nullptr) {
+                    out.text = oneshot::walkerLine();
+                } else if (best % 3 == 0) {
+                    out.text = std::format(
+                        "* I AM {} AROUND HERE. FOLKS SAY SOMETHING STRANGE HIDES PAST {}.",
+                        m_npcs[bi].occupation(), target->name);
+                } else if (best % 3 == 1) {
+                    out.text = std::format(
+                        "* YOU LOOKING FOR OLD RECORDS? TRY {}. I HEAR STATIC FROM THAT WAY.",
+                        target->name);
+                } else {
+                    out.text = std::format(
+                        "* {} GIVES ME BAD DREAMS. TOO QUIET. GO LOOK THERE YOURSELF.",
+                        target->name);
+                }
                 break;
+            }
         }
         return out;
+    }
+
+    // 4) Named places: examine for a short description. Smaller radius so
+    // people (checked above) always win ties.
+    {
+        const float pr = 5.0f;
+        const float pr2 = pr * pr;
+        int bestPlace = -1;
+        float bestPlaceD2 = pr2;
+        for (const auto& loc : m_world.locations()) {
+            const float d2 = dist2(pp, {loc.x, loc.y});
+            if (d2 <= bestPlaceD2) {
+                bestPlaceD2 = d2;
+                bestPlace = loc.id;
+            }
+        }
+        if (bestPlace >= 0) {
+            const auto& loc =
+                m_world.location(bestPlace);
+            out.kind = InteractKind::Place;
+            out.index = bestPlace;
+            out.speaker = loc.name + " (" + loc.kind + ")";
+            out.text = loc.desc;
+            return out;
+        }
     }
 
     return out;

@@ -46,7 +46,7 @@ public:
         entities::Vec2 pos{};
     };
 
-    enum class InteractKind { None, Trace, Talk, Messenger, EraseLocked, EraseWin };
+    enum class InteractKind { None, Trace, Talk, Messenger, Place, EraseLocked, EraseWin };
 
     struct InteractResult {
         InteractKind kind = InteractKind::None;

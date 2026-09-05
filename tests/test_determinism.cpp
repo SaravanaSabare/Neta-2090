@@ -149,6 +149,104 @@ int main() {
     }
 
     {
+        // City: same seed -> same places; old district names untouched.
+        neta::sim::Simulation a;
+        neta::sim::Simulation b;
+        a.generate(482913);
+        b.generate(482913);
+        bool same = a.world().locations().size() >= 15 &&
+                    a.world().locations().size() == b.world().locations().size();
+        for (std::size_t i = 0; same && i < a.world().locations().size(); ++i) {
+            const auto& x = a.world().locations()[i];
+            const auto& y = b.world().locations()[i];
+            same = same && x.name == y.name && x.district == y.district && x.x == y.x &&
+                   x.y == y.y;
+        }
+        check(same, "city: same seed -> same places");
+        bool namesOk = a.world().districtCount() == 5 && !a.world().district(0).name.empty();
+        check(namesOk, "city: 5 districts with names");
+        neta::sim::Simulation c;
+        c.generate(777);
+        check(c.world().locations().size() != a.world().locations().size() ||
+                  c.world().locations()[0].name != a.world().locations()[0].name,
+              "city: different seeds -> different places");
+    }
+
+    {
+        // Population: jobs + homes assigned, walkers hint at real traces.
+        neta::sim::Simulation sim;
+        sim.generate(482913);
+        bool jobsOk = true;
+        for (const auto& npc : sim.npcs()) {
+            jobsOk = jobsOk && !npc.occupation().empty() && npc.homeLocation() >= 0;
+        }
+        check(jobsOk, "pop: every npc has job + home");
+        // Walker hint mentions a real unfound trace district.
+        bool hintOk = false;
+        for (std::size_t i = 5; i < sim.npcs().size() && !hintOk; ++i) {
+            sim.teleportPlayer(sim.npcWorldPos(i));
+            auto r = sim.interact();
+            if (r.kind != neta::sim::Simulation::InteractKind::Talk) {
+                continue;
+            }
+            for (const auto& t : sim.traces()) {
+                const std::string& dname = sim.world().district(t.district).name;
+                if (r.text.find(dname) != std::string::npos) {
+                    hintOk = true;
+                    break;
+                }
+            }
+        }
+        check(hintOk, "pop: walker hint names a trace district");
+        // Examining a far-flung place shows its description.
+        bool placeOk = false;
+        {
+            // Find the place furthest from all higher-priority interactables.
+            auto dist = [](float ax, float ay, float bx, float by) {
+                const float dx = ax - bx;
+                const float dy = ay - by;
+                return dx * dx + dy * dy;
+            };
+            const auto& locs = sim.world().locations();
+            std::size_t pick = 0;
+            float pickD2 = -1.0f;
+            for (const auto& loc : locs) {
+                float nearest = dist(loc.x, loc.y, sim.eraseTerminal().pos.x,
+                                     sim.eraseTerminal().pos.y);
+                for (const auto& t : sim.traces()) {
+                    const float d2 = dist(loc.x, loc.y, t.pos.x, t.pos.y);
+                    if (d2 < nearest) {
+                        nearest = d2;
+                    }
+                }
+                for (std::size_t i = 0; i < sim.npcs().size(); ++i) {
+                    const auto wp = sim.npcWorldPos(i);
+                    if (wp.x < -50.0f) {
+                        continue;
+                    }
+                    const float d2 = dist(loc.x, loc.y, wp.x, wp.y);
+                    if (d2 < nearest) {
+                        nearest = d2;
+                    }
+                }
+                if (nearest > pickD2) {
+                    pickD2 = nearest;
+                    pick = static_cast<std::size_t>(loc.id);
+                }
+            }
+            if (pickD2 > 7.5f * 7.5f) {
+                const auto& loc = locs[pick];
+                neta::sim::Simulation probe;
+                probe.generate(482913);
+                probe.teleportPlayer({loc.x, loc.y});
+                auto r = probe.interact();
+                placeOk = (r.kind == neta::sim::Simulation::InteractKind::Place && !r.text.empty());
+            }
+        }
+        check(placeOk, "city: examining a place shows text");
+    }
+
+    {
         // Round-trip through the real file format in the OS temp dir.
         const auto before = runSim(482913, 42);
         const std::string path =
