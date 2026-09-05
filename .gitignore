@@ -1,0 +1,45 @@
+# Build output
+build/
+out/
+install/
+
+# CMake generated files (when building outside build/)
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+compile_commands.json
+
+# Compiled objects / binaries
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.exe
+*.pdb
+*.ilk
+*.exp
+
+# FetchContent downloads
+_deps/
+
+# Saves and logs created while testing locally
+saves/
+*.log
+neta.log
+
+# VS Code (keep the shared .vscode/ configs, ignore personal state)
+.vscode/ipch/
+*.code-workspace
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
