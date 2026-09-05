@@ -17,8 +17,9 @@ struct District {
 };
 
 // A named place inside a district. Static: rebuilt from the seed on the
-// "city" stream, so saves stay small. Position is in world units (0-100 x,
-// 0-56 y), the same space the player walks in.
+// "city" stream, so saves stay small. Position is sector-local (0-100 x,
+// 0-56 y): each district is now a full screen you walk inside, and districts
+// form an east/west ring in index order.
 struct Location {
     int id = 0;
     int district = 0;

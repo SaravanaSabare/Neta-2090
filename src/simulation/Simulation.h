@@ -86,9 +86,22 @@ public:
     bool messengerSpawned() const { return m_messengerSpawned; }
     oneshot::NpcRole npcRole(std::size_t i) const { return m_roles.at(i); }
     bool npcTalked(std::size_t i) const { return m_talked.at(i) != 0; }
-    entities::Vec2 npcWorldPos(std::size_t i) const;
+    // Sector-local position of an npc (each district is a full 100x56 area).
+    entities::Vec2 npcLocalPos(std::size_t i) const;
+    // Ring travel: districts are sectors 0-4, east/west edges wrap around.
+    int playerSector() const { return m_playerSector; }
+    int visited(int sector) const { return m_visited.at(static_cast<std::size_t>(sector)); }
     // Test helper: move player instantly (clamped).
     void teleportPlayer(entities::Vec2 p) {
+        m_player.setPosition(p);
+        clampPlayer();
+    }
+    // Test helper: jump to a sector screen (marks visited like real travel).
+    void travelTo(int sector, entities::Vec2 p) {
+        if (sector >= 0 && sector < world::World::kDistrictCount) {
+            m_playerSector = sector;
+            onEnterSector();
+        }
         m_player.setPosition(p);
         clampPlayer();
     }
@@ -108,6 +121,7 @@ private:
     void pushEvent(const std::string& event);
     void emitPlaceholderEvent();
     void clampPlayer();
+    void onEnterSector();
 
     std::uint64_t m_seed = 0;
     std::uint64_t m_tick = 0;
@@ -127,6 +141,9 @@ private:
     std::vector<int> m_talked;
     bool m_messengerSpawned = false;
     bool m_won = false;
+    // Ring position: which sector screen the player is on + visited marks.
+    int m_playerSector = 0;
+    std::vector<int> m_visited;
 };
 
 }  // namespace neta::sim

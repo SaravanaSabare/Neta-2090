@@ -63,7 +63,8 @@ void Ui::draw(render::Renderer& renderer, const sim::Simulation& sim, const UiOp
     // Top HUD box: always visible (even on title, behind it).
     renderer.drawBox(8, 2, 464, 22);
     const std::string hud =
-        std::format("NETA-2090  TRACES {}/{}  {}  {:.0f}FPS{}", ui.tracesFound, ui.tracesTotal,
+        std::format("NETA-2090  TRACES {}/{}  SEC {}  {}  {:.0f}FPS{}", ui.tracesFound,
+                    ui.tracesTotal, ui.sector + 1,
                     narrative::NarrativeState::stageName(sim.narrative().stage()), fps,
                     ui.paused ? "  PAUSED" : "");
     renderer.drawText(hud, 14, 8, 1, kText);

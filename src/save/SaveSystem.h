@@ -19,7 +19,7 @@ struct NpcSave {
 };
 
 struct SaveData {
-    static constexpr std::uint32_t kVersion = 2;
+    static constexpr std::uint32_t kVersion = 3;
 
     std::uint64_t seed = 0;
     std::uint64_t tick = 0;
@@ -35,6 +35,9 @@ struct SaveData {
     std::vector<int> talked;  // size N, 1 = talked to this npc index
     int messengerSpawned = 0;
     int won = 0;
+    // Ring position (v3). Static spots rebuild from seed; only these ride along.
+    int playerSector = 0;
+    std::vector<int> visited;  // size 5, 1 = sector entered
 };
 
 bool snapshotsEqual(const SaveData& a, const SaveData& b, float eps = 1e-4f);

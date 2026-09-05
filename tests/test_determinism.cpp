@@ -110,13 +110,15 @@ int main() {
         neta::sim::Simulation sim;
         sim.generate(482913);
         check(sim.tracesFound() == 0 && !sim.won(), "oneshot: starts with 0 traces, not won");
-        sim.teleportPlayer(sim.eraseTerminal().pos);
+        check(sim.playerSector() == 0, "ring: player starts in sector 0");
+        sim.travelTo(sim.eraseTerminal().district, sim.eraseTerminal().pos);
         auto locked = sim.interact();
         check(locked.kind == neta::sim::Simulation::InteractKind::EraseLocked,
               "oneshot: erase locked before 3 traces");
         check(!sim.won(), "oneshot: not won when locked");
         for (int t = 0; t < 3; ++t) {
-            sim.teleportPlayer(sim.traces()[static_cast<std::size_t>(t)].pos);
+            const auto& spot = sim.traces()[static_cast<std::size_t>(t)];
+            sim.travelTo(spot.district, spot.pos);
             auto r = sim.interact();
             check(r.kind == neta::sim::Simulation::InteractKind::Trace,
                   "oneshot: trace pickup returns text");
@@ -125,7 +127,7 @@ int main() {
         check(sim.messengerSpawned(), "oneshot: messenger spawns after 2 traces");
         check(static_cast<int>(sim.narrative().stage()) == 4,
               "oneshot: 3 traces -> ErasureKnown stage");
-        sim.teleportPlayer(sim.eraseTerminal().pos);
+        sim.travelTo(sim.eraseTerminal().district, sim.eraseTerminal().pos);
         auto win = sim.interact();
         check(win.kind == neta::sim::Simulation::InteractKind::EraseWin,
               "oneshot: erase wins with 3 traces");
@@ -183,8 +185,10 @@ int main() {
         check(jobsOk, "pop: every npc has job + home");
         // Walker hint mentions a real unfound trace district.
         bool hintOk = false;
+        bool sectorWordOk = false;
         for (std::size_t i = 5; i < sim.npcs().size() && !hintOk; ++i) {
-            sim.teleportPlayer(sim.npcWorldPos(i));
+            sim.travelTo(sim.npcs()[i].district(), {50.0f, 28.0f});
+            sim.teleportPlayer(sim.npcLocalPos(i));
             auto r = sim.interact();
             if (r.kind != neta::sim::Simulation::InteractKind::Talk) {
                 continue;
@@ -196,8 +200,12 @@ int main() {
                     break;
                 }
             }
+            if (r.text.find("SECTOR") != std::string::npos) {
+                sectorWordOk = true;
+            }
         }
         check(hintOk, "pop: walker hint names a trace district");
+        check(sectorWordOk, "pop: walker hint uses SECTOR coordinates");
         // Examining a far-flung place shows its description.
         bool placeOk = false;
         {
@@ -211,16 +219,24 @@ int main() {
             std::size_t pick = 0;
             float pickD2 = -1.0f;
             for (const auto& loc : locs) {
-                float nearest = dist(loc.x, loc.y, sim.eraseTerminal().pos.x,
-                                     sim.eraseTerminal().pos.y);
+                // Stand in the place's sector so npc positions resolve.
+                sim.travelTo(loc.district, {loc.x, loc.y});
+                float nearest = 1e20f;
+                if (sim.eraseTerminal().district == loc.district) {
+                    nearest = dist(loc.x, loc.y, sim.eraseTerminal().pos.x,
+                                   sim.eraseTerminal().pos.y);
+                }
                 for (const auto& t : sim.traces()) {
+                    if (t.district != loc.district) {
+                        continue;
+                    }
                     const float d2 = dist(loc.x, loc.y, t.pos.x, t.pos.y);
                     if (d2 < nearest) {
                         nearest = d2;
                     }
                 }
                 for (std::size_t i = 0; i < sim.npcs().size(); ++i) {
-                    const auto wp = sim.npcWorldPos(i);
+                    const auto wp = sim.npcLocalPos(i);
                     if (wp.x < -50.0f) {
                         continue;
                     }
@@ -238,12 +254,52 @@ int main() {
                 const auto& loc = locs[pick];
                 neta::sim::Simulation probe;
                 probe.generate(482913);
-                probe.teleportPlayer({loc.x, loc.y});
+                probe.travelTo(loc.district, {loc.x, loc.y});
                 auto r = probe.interact();
                 placeOk = (r.kind == neta::sim::Simulation::InteractKind::Place && !r.text.empty());
             }
         }
         check(placeOk, "city: examining a place shows text");
+    }
+
+    {
+        // Ring travel: walking off an edge enters the next sector, wraps.
+        neta::sim::Simulation sim;
+        sim.generate(482913);
+        sim.teleportPlayer({99.0f, 28.0f});
+        sim.setPlayerIntent({1.0f, 0.0f});
+        sim.tick(neta::sim::Simulation::kTickDt);
+        check(sim.playerSector() == 1, "ring: east edge enters next sector");
+        check(sim.visited(1) == 1, "ring: entered sector marked visited");
+        sim.travelTo(0, {1.0f, 28.0f});
+        sim.setPlayerIntent({-1.0f, 0.0f});
+        sim.tick(neta::sim::Simulation::kTickDt);
+        check(sim.playerSector() == 4, "ring: west edge from 0 wraps to 4");
+        sim.travelTo(4, {99.0f, 28.0f});
+        sim.setPlayerIntent({1.0f, 0.0f});
+        sim.tick(neta::sim::Simulation::kTickDt);
+        check(sim.playerSector() == 0, "ring: east edge from 4 wraps to 0");
+    }
+
+    {
+        // Save v3 remembers the sector; v2-style restores to sector 0.
+        neta::sim::Simulation sim;
+        sim.generate(482913);
+        sim.travelTo(3, {50.0f, 28.0f});
+        const auto snap = sim.snapshot();
+        check(snap.playerSector == 3, "save: snapshot carries sector");
+        neta::sim::Simulation into;
+        into.generate(482913);
+        std::string err;
+        check(into.restore(snap, err), "save: v3 snapshot restores");
+        check(into.playerSector() == 3, "save: restore keeps sector");
+        neta::save::SaveData v2 = snap;
+        v2.playerSector = 0;
+        v2.visited.clear();
+        neta::sim::Simulation into2;
+        into2.generate(482913);
+        check(into2.restore(v2, err), "save: v2-style snapshot restores");
+        check(into2.playerSector() == 0, "save: v2 migrates to sector 0");
     }
 
     {

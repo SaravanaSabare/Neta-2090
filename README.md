@@ -54,8 +54,8 @@ Binaries land in `build/debug/` and `build/release/`. `SDL2.dll` is copied next 
 
 | Key | Action |
 |---|---|
-| WASD / arrows | Move |
-| E / Z / Enter | Talk, pick up trace, advance text |
+| WASD / arrows | Move (walk off east/west edge to travel the ring) |
+| E / Z / Enter | Talk, pick up trace, examine place, advance text |
 | Space | Pause / resume simulation (when no text box open) |
 | F1 | Toggle debug event overlay |
 | F2 | Toggle CRT scanlines |

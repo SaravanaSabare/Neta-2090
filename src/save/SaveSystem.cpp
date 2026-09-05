@@ -46,6 +46,9 @@ bool snapshotsEqual(const SaveData& a, const SaveData& b, float eps) {
     if (a.messengerSpawned != b.messengerSpawned || a.won != b.won) {
         return false;
     }
+    if (a.playerSector != b.playerSector || a.visited != b.visited) {
+        return false;
+    }
     return true;
 }
 
@@ -102,6 +105,12 @@ bool SaveSystem::saveToFile(const std::string& path, const SaveData& data) {
     }
     out << '\n';
     out << "oneshot " << data.messengerSpawned << ' ' << data.won << '\n';
+    out << "sector " << data.playerSector << '\n';
+    out << "visited";
+    for (int v : data.visited) {
+        out << ' ' << v;
+    }
+    out << '\n';
     out.flush();
     if (!out) {
         core::Log::error("save", "failed while writing '{}'", path);
@@ -123,9 +132,10 @@ bool SaveSystem::loadFromFile(const std::string& path, SaveData& out, std::strin
         error = "not a NETA save file: '" + path + "'";
         return false;
     }
-    // Migration policy: v1 had no one-shot lines (defaults to zeros).
-    // v2 adds traces / talked / oneshot. Never silently reinterpret bytes.
-    if (version != 1 && version != SaveData::kVersion) {
+    // Migration policy: v1 had no one-shot lines (zeros). v2 added
+    // traces/talked/oneshot but no sector (sector 0, only it visited).
+    // Never silently reinterpret bytes.
+    if (version != 1 && version != 2 && version != SaveData::kVersion) {
         error = "unsupported save version " + std::to_string(version) + " (game supports " +
                 std::to_string(SaveData::kVersion) + ")";
         return false;
@@ -179,6 +189,8 @@ bool SaveSystem::loadFromFile(const std::string& path, SaveData& out, std::strin
     data.talked.assign(npcCount, 0);
     data.messengerSpawned = 0;
     data.won = 0;
+    data.playerSector = 0;
+    data.visited = {1, 0, 0, 0, 0};
     if (version == 1) {
         out = std::move(data);
         core::Log::info("save", "loaded v1 tick {} from '{}' (migrated)", out.tick, path);
@@ -239,6 +251,44 @@ bool SaveSystem::loadFromFile(const std::string& path, SaveData& out, std::strin
         }
         data.messengerSpawned = (m != 0) ? 1 : 0;
         data.won = (w != 0) ? 1 : 0;
+    }
+    // v2 files end here: ring position defaults to sector 0.
+    if (version == 2) {
+        out = std::move(data);
+        core::Log::info("save", "loaded v2 tick {} from '{}' (migrated)", out.tick, path);
+        return true;
+    }
+    if (!std::getline(in, line) || line.rfind("sector", 0) != 0) {
+        error = "corrupt save: expected 'sector'";
+        return false;
+    }
+    {
+        std::istringstream ls(line);
+        std::string k;
+        int s = 0;
+        if (!(ls >> k >> s) || k != "sector" || s < 0 || s > 4) {
+            error = "corrupt save: bad sector line";
+            return false;
+        }
+        data.playerSector = s;
+    }
+    if (!std::getline(in, line) || line.rfind("visited", 0) != 0) {
+        error = "corrupt save: expected 'visited'";
+        return false;
+    }
+    {
+        std::istringstream ls(line);
+        std::string k;
+        ls >> k;
+        data.visited.clear();
+        int v = 0;
+        while (ls >> v) {
+            data.visited.push_back(v != 0 ? 1 : 0);
+        }
+        if (data.visited.size() != 5) {
+            error = "corrupt save: bad visited line";
+            return false;
+        }
     }
     out = std::move(data);
     core::Log::info("save", "loaded tick {} from '{}'", out.tick, path);

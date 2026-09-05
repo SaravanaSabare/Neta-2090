@@ -54,8 +54,8 @@ void World::generate(std::uint64_t seed) {
         m_districts.push_back(std::move(d));
     }
     // Places on their own stream: 3-5 per district, kinds shuffled.
+    // Positions are sector-local: the whole 100x56 area is one district now.
     core::RngStream c = rng.streamFor("city");
-    const float colW = kAreaW / static_cast<float>(kDistrictCount);
     int nextId = 0;
     for (int di = 0; di < kDistrictCount; ++di) {
         const int count = 3 + static_cast<int>(c.rangeIndex(3));  // 3-5
@@ -84,9 +84,9 @@ void World::generate(std::uint64_t seed) {
             loc.kind = kd.kind;
             loc.name = core + " " + kd.suffix;
             loc.desc = kd.desc;
-            const double fx = 0.15 + c.nextDouble() * 0.7;
+            const double fx = 0.12 + c.nextDouble() * 0.76;
             const double fy = 0.15 + c.nextDouble() * 0.7;
-            loc.x = (static_cast<float>(di) + static_cast<float>(fx)) * colW;
+            loc.x = static_cast<float>(fx) * kAreaW;
             loc.y = 6.0f + static_cast<float>(fy) * (kAreaH - 12.0f);
             m_locations.push_back(std::move(loc));
         }

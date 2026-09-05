@@ -64,11 +64,11 @@ int Game::runHeadless() {
     for (int i = 0; i < m_config.headlessTicks; ++i) {
         sim.tick(sim::Simulation::kTickDt);
         // Spec-style debug feed: one line per tick a future debugger can diff.
-        std::printf("TICK %llu t=%.1f stage=%s events=%zu player=(%.1f,%.1f) traces=%d won=%d\n",
+        std::printf("TICK %llu t=%.1f stage=%s sec=%d events=%zu player=(%.1f,%.1f) traces=%d won=%d\n",
                     static_cast<unsigned long long>(sim.tickCount()), sim.timeSeconds(),
                     narrative::NarrativeState::stageName(sim.narrative().stage()),
-                    sim.eventLog().size(), sim.player().position().x, sim.player().position().y,
-                    sim.tracesFound(), sim.won() ? 1 : 0);
+                    sim.playerSector(), sim.eventLog().size(), sim.player().position().x,
+                    sim.player().position().y, sim.tracesFound(), sim.won() ? 1 : 0);
         if (!sim.eventLog().empty()) {
             std::printf("  last: %s\n", sim.eventLog().back().c_str());
         }
@@ -122,6 +122,7 @@ int Game::runWindowed() {
             auto syncProgress = [&]() {
                 ui.tracesFound = sim.tracesFound();
                 ui.tracesTotal = oneshot::kTraceCount;
+                ui.sector = sim.playerSector();
             };
             // If we loaded a save with progress, skip the title.
             if (!m_config.loadPath.empty() && (sim.tracesFound() > 0 || sim.won())) {

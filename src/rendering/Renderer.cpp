@@ -1,5 +1,6 @@
 #include "rendering/Renderer.h"
 
+#include <cstdint>
 #include <format>
 #include <utility>
 
@@ -119,28 +120,121 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
 
     fillRect(ax, ay, aw, ah, kBg);
 
-    // Districts as plain black columns with thin white borders.
+    // One sector per screen: the ring shows only where the player stands.
     const int n = sim.world().districtCount() > 0 ? sim.world().districtCount() : 1;
-    const int colW = aw / n;
-    for (int i = 0; i < sim.world().districtCount(); ++i) {
-        const int cx = ax + i * colW;
-        const int cw = (i == n - 1) ? (ax + aw - cx) : colW;
-        SDL_SetRenderDrawColor(m_renderer, kWhite.r, kWhite.g, kWhite.b, kWhite.a);
-        SDL_Rect border{cx, ay, cw, ah};
-        SDL_RenderDrawRect(m_renderer, &border);
-        drawText(sim.world().district(i).name, cx + 4, ay + 3, 1, kDim);
+    int here = sim.playerSector();
+    if (here < 0) {
+        here = 0;
     }
+    if (here >= n) {
+        here = n - 1;
+    }
+    const auto& d = sim.world().district(here);
+
     auto toScreen = [&](entities::Vec2 w) {
         const int sx = ax + static_cast<int>(w.x / sim::Simulation::kAreaW * aw);
         const int sy = ay + static_cast<int>(w.y / sim::Simulation::kAreaH * ah);
         return std::pair<int, int>(sx, sy);
     };
+    // Stateless decor hash: same seed + sector = same biome layout, no sim state.
+    auto decor = [&](int i, int j) -> int {
+        std::uint64_t x = sim.seed() ^ (static_cast<std::uint64_t>(here + 1) * 0x9e3779b97f4a7c15ULL) ^
+                          (static_cast<std::uint64_t>(i) * 0x100000ULL +
+                           static_cast<std::uint64_t>(j));
+        x += 0x9e3779b97f4a7c15ULL;
+        x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+        x ^= x >> 31;
+        return static_cast<int>(x & 0x7fffffff);
+    };
+
+    // Biome art per district theme, dim so gameplay marks pop.
+    const std::string& note = d.note;
+    if (note == "market sprawl") {
+        for (int i = 0; i < 12; ++i) {
+            const int sx = ax + 12 + decor(i, 0) % (aw - 30);
+            const int sy = ay + 26 + decor(i, 1) % (ah - 50);
+            fillRect(sx, sy, 7, 4, kDim);
+            if (decor(i, 2) % 3 == 0) {
+                fillRect(sx + 1, sy - 2, 5, 1, kYellow);
+            }
+        }
+    } else if (note == "antenna fields") {
+        for (int i = 0; i < 8; ++i) {
+            const int sx = ax + 14 + (i * (aw - 28)) / 7 + decor(i, 0) % 7 - 3;
+            const int top = ay + 20 + decor(i, 1) % (ah / 3);
+            const int base = ay + ah - 24 - decor(i, 2) % 20;
+            SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
+            SDL_RenderDrawLine(m_renderer, sx, top, sx, base);
+            fillRect(sx - 1, top - 2, 3, 3, kYellow);
+        }
+    } else if (note == "night clinic row") {
+        for (int i = 0; i < 6; ++i) {
+            const int sx = ax + 12 + (i * (aw - 30)) / 5;
+            const int sy = ay + 30 + decor(i, 0) % (ah - 70);
+            SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
+            SDL_Rect r{sx, sy, 10, 8};
+            SDL_RenderDrawRect(m_renderer, &r);
+            fillRect(sx + 2, sy + 2, 6, 4, kYellow);
+        }
+    } else if (note == "port authority") {
+        for (int i = 0; i < 6; ++i) {
+            const int sx = ax + 12 + decor(i, 0) % (aw - 40);
+            const int sy = ay + 30 + decor(i, 1) % (ah - 60);
+            SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
+            SDL_Rect r{sx, sy, 16, 9};
+            SDL_RenderDrawRect(m_renderer, &r);
+        }
+        SDL_SetRenderDrawColor(m_renderer, kWhite.r, kWhite.g, kWhite.b, kWhite.a);
+        SDL_Rect gate{ax + aw / 2 - 8, ay + ah - 22, 16, 12};
+        SDL_RenderDrawRect(m_renderer, &gate);
+    } else if (note == "industrial sector") {
+        for (int i = 0; i < 6; ++i) {
+            const int sx = ax + 14 + (i * (aw - 28)) / 5;
+            SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
+            SDL_RenderDrawLine(m_renderer, sx, ay + 24, sx, ay + ah - 20);
+        }
+        for (int i = 0; i < 3; ++i) {
+            const int sx = ax + 20 + decor(i, 0) % (aw - 50);
+            fillRect(sx, ay + ah - 40, 8, 20, kDim);
+        }
+    } else if (note == "residential stacks") {
+        for (int r = 0; r < 3; ++r) {
+            for (int c = 0; c < 8; ++c) {
+                const int sx = ax + 16 + c * ((aw - 32) / 7) + decor(r * 8 + c, 0) % 4;
+                const int sy = ay + 34 + r * 22;
+                fillRect(sx, sy, 9, 7, kDim);
+            }
+        }
+    } else {  // data haven and anything future: server-light scatter
+        for (int i = 0; i < 24; ++i) {
+            const int sx = ax + 10 + decor(i, 0) % (aw - 20);
+            const int sy = ay + 24 + decor(i, 1) % (ah - 44);
+            fillRect(sx, sy, 2, 2, (decor(i, 2) % 4 == 0) ? kYellow : kDim);
+        }
+    }
+
+    // Sector title + minimap ring (visited light up, current in brackets).
+    drawText(std::format("SECTOR {}: {}", here + 1, d.name), ax + 4, ay + 3, 1, kWhite);
+    {
+        int mx = ax + aw - 4;
+        for (int i = n - 1; i >= 0; --i) {
+            const std::string num = std::to_string(i + 1);
+            const bool cur = (i == here);
+            const bool seen = cur || sim.visited(i) != 0;
+            const std::string tok = cur ? "[" + num + "]" : " " + num + " ";
+            const int w = static_cast<int>(tok.size()) * 4;
+            mx -= w;
+            drawText(tok, mx, ay + 3, 1, seen ? kWhite : kDim);
+            mx -= 2;
+        }
+    }
 
     const bool blink = (SDL_GetTicks() / 500) % 2 == 0;
 
-    // Traces: yellow squares, blink when not found.
+    // Traces: yellow squares, blink when not found (this sector only).
     for (const auto& t : sim.traces()) {
-        if (t.found) {
+        if (t.found || t.district != here) {
             continue;
         }
         if (!blink) {
@@ -150,8 +244,8 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
         fillRect(sx - 2, sy - 2, 5, 5, kTrace);
     }
 
-    // Erase terminal: white door.
-    {
+    // Erase terminal: white door (this sector only).
+    if (sim.eraseTerminal().district == here) {
         const auto [sx, sy] = toScreen(sim.eraseTerminal().pos);
         fillRect(sx - 3, sy - 4, 7, 9, kWhite);
         fillRect(sx - 2, sy - 3, 5, 7, kBg);
@@ -160,37 +254,22 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
         }
     }
 
-    // Places: dim dots everywhere, names only in the player's district.
-    {
-        const int nLoc = sim.world().districtCount() > 0 ? sim.world().districtCount() : 1;
-        int here = static_cast<int>(sim.player().position().x / sim::Simulation::kAreaW * nLoc);
-        if (here < 0) {
-            here = 0;
+    // Places: dim dots + names (this sector only, room for all now).
+    for (const auto& loc : sim.world().locations()) {
+        if (loc.district != here) {
+            continue;
         }
-        if (here >= nLoc) {
-            here = nLoc - 1;
-        }
-        for (const auto& loc : sim.world().locations()) {
-            entities::Vec2 w{loc.x, loc.y};
-            const auto [sx, sy] = toScreen(w);
-            fillRect(sx - 1, sy - 1, 2, 2, kDim);
-            if (loc.district == here) {
-                drawText(loc.name, sx + 3, sy - 3, 1, kDim);
-            }
-        }
-        // Current district label with character (bottom-left of world area).
-        const auto& d = sim.world().district(here);
-        const char* rich = d.wealth > 66 ? "RICH" : (d.wealth < 33 ? "POOR" : "MIXED");
-        const char* busy = d.bustle > 66 ? "BUSY" : (d.bustle < 33 ? "QUIET" : "STEADY");
-        drawText(std::format("* {} - {} ({}/{})", d.name, d.note, rich, busy), ax + 4,
-                 ay + ah - 10, 1, kWhite);
+        entities::Vec2 w{loc.x, loc.y};
+        const auto [sx, sy] = toScreen(w);
+        fillRect(sx - 1, sy - 1, 2, 2, kDim);
+        drawText(loc.name, sx + 3, sy - 3, 1, kDim);
     }
 
-    // NPCs: small white squares. Messenger (index 4) yellow when spawned.
+    // NPCs: small white squares, this sector only. Messenger yellow.
     for (std::size_t i = 0; i < sim.npcs().size(); ++i) {
-        const auto wp = sim.npcWorldPos(i);
+        const auto wp = sim.npcLocalPos(i);
         if (wp.x < -50.0f) {
-            continue;  // hidden messenger
+            continue;  // hidden messenger or other sector
         }
         const auto [sx, sy] = toScreen(wp);
         SDL_Color c = kWhite;
@@ -206,6 +285,15 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
         drawHeart(sx - 3, sy - 3, 1, kHeart);
     }
 
+    // Sector character line (bottom-left of world area).
+    {
+        const char* rich = d.wealth > 66 ? "RICH" : (d.wealth < 33 ? "POOR" : "MIXED");
+        const char* busy = d.bustle > 66 ? "BUSY" : (d.bustle < 33 ? "QUIET" : "STEADY");
+        drawText(std::format("* SECTOR {}: {} - {} ({}/{})", here + 1, d.name, d.note, rich,
+                             busy),
+                 ax + 4, ay + ah - 10, 1, kWhite);
+    }
+
     // Outer frame: border only (no fill -- fill would cover the districts).
     SDL_SetRenderDrawColor(m_renderer, kWhite.r, kWhite.g, kWhite.b, kWhite.a);
     for (int t = 0; t < 2; ++t) {
@@ -218,7 +306,7 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
         std::format("* {} [{}]", canon::kObjective,
                     narrative::NarrativeState::stageName(sim.narrative().stage()));
     drawText(obj, kMargin, kVirtualH - kFooterH + 5, 1, kYellow);
-    drawText("* WASD MOVE / E TALK / F1 LOG / F5 SAVE / F9 LOAD / ESC QUIT", kMargin,
+    drawText("* WASD MOVE / E TALK / EDGE = TRAVEL / F1 LOG / F5 SAVE / ESC QUIT", kMargin,
              kVirtualH - kFooterH + 20, 1, kDim);
 }
 

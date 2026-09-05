@@ -26,4 +26,5 @@ struct UiOptions {
     std::size_t dlgShown = 0;
     int tracesFound = 0;
     int tracesTotal = 3;
+    int sector = 0;  // player ring sector, 0-based
 };
