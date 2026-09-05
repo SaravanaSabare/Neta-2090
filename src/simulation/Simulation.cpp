@@ -167,6 +167,32 @@ void Simulation::buildStaticContent(std::uint64_t seed) {
                                                           static_cast<std::size_t>(count))));
         }
     }
+
+    // Turf: one faction per sector on its own stream (static, never saved).
+    {
+        core::RngStream ts = rng.streamFor("turf");
+        m_turf.assign(world::World::kDistrictCount, 0);
+        for (int i = 0; i < world::World::kDistrictCount; ++i) {
+            m_turf[static_cast<std::size_t>(i)] = static_cast<int>(ts.rangeIndex(kFactionCount));
+        }
+    }
+
+    // Place owners: an npc from the same district per location (static).
+    {
+        m_placeOwner.assign(m_world.locations().size(), -1);
+        for (const auto& loc : m_world.locations()) {
+            std::vector<int> locals;
+            for (std::size_t i = 0; i < m_npcs.size(); ++i) {
+                if (m_npcs[i].district() == loc.district) {
+                    locals.push_back(static_cast<int>(i));
+                }
+            }
+            if (!locals.empty()) {
+                m_placeOwner[static_cast<std::size_t>(loc.id)] =
+                    locals[pop.rangeIndex(locals.size())];
+            }
+        }
+    }
 }
 
 void Simulation::tick(double dt) {
@@ -414,21 +440,34 @@ Simulation::InteractResult Simulation::interact() {
                     out.text = oneshot::walkerLine();
                 } else {
                     const auto& td = m_world.district(target->district);
-                    const char* side =
-                        target->pos.x > kAreaW * 0.5f ? "EAST SIDE" : "WEST SIDE";
-                    if (best % 3 == 0) {
+                    const char* side = target->pos.x > kAreaW * 0.5f ? "EAST SIDE" : "WEST SIDE";
+                    if (best % 4 == 0) {
                         out.text = std::format(
                             "* I AM {} HERE. SOMETHING STRANGE HIDES IN SECTOR {}: {}, {}.",
                             m_npcs[bi].occupation(), target->district + 1, td.name, side);
-                    } else if (best % 3 == 1) {
+                    } else if (best % 4 == 1) {
                         out.text = std::format(
                             "* OLD RECORDS? TRY SECTOR {}, {} OF {}. I HEAR STATIC THAT WAY.",
                             target->district + 1, side, td.name);
-                    } else {
+                    } else if (best % 4 == 2) {
                         out.text = std::format(
                             "* SECTOR {} GIVES ME BAD DREAMS. {}, {}. GO LOOK YOURSELF.",
                             target->district + 1, td.name, side);
+                    } else {
+                        const int turf = m_turf.at(static_cast<std::size_t>(m_playerSector));
+                        out.text = std::format(
+                            "* {} RUNS THIS SECTOR. THEY SEE EVERYTHING. KEEP YOUR HEAD DOWN.",
+                            m_factions.at(static_cast<std::size_t>(turf)).name());
                     }
+                }
+                // Talk-back: walkers name the place they keep.
+                if (m_npcs[bi].homeLocation() >= 0 &&
+                    static_cast<std::size_t>(m_npcs[bi].homeLocation()) <
+                        m_world.locations().size()) {
+                    out.text += std::format(
+                        " I MIND {}.", m_world.locations()[static_cast<std::size_t>(
+                                                          m_npcs[bi].homeLocation())]
+                                           .name);
                 }
                 break;
             }
@@ -454,12 +493,19 @@ Simulation::InteractResult Simulation::interact() {
             }
         }
         if (bestPlace >= 0) {
-            const auto& loc =
-                m_world.location(bestPlace);
+            const auto& loc = m_world.location(bestPlace);
             out.kind = InteractKind::Place;
             out.index = bestPlace;
             out.speaker = loc.name + " (" + loc.kind + ")";
             out.text = loc.desc;
+            const int owner =
+                (bestPlace >= 0 && static_cast<std::size_t>(bestPlace) < m_placeOwner.size())
+                    ? m_placeOwner[static_cast<std::size_t>(bestPlace)]
+                    : -1;
+            if (owner >= 0 && static_cast<std::size_t>(owner) < m_npcs.size()) {
+                out.text += std::format(" RUN BY {}, {}.", m_npcs[static_cast<std::size_t>(owner)].name(),
+                                        m_npcs[static_cast<std::size_t>(owner)].occupation());
+            }
             return out;
         }
     }
@@ -488,8 +534,12 @@ void Simulation::onEnterSector() {
         m_visited[static_cast<std::size_t>(m_playerSector)] = 1;
     }
     if (m_playerSector >= 0 && m_playerSector < m_world.districtCount()) {
-        pushEvent(std::format("ENTERED SECTOR {}: {}", m_playerSector + 1,
-                              m_world.district(m_playerSector).name));
+        const std::string turf =
+            (m_playerSector >= 0 && static_cast<std::size_t>(m_playerSector) < m_turf.size())
+                ? m_factions.at(static_cast<std::size_t>(m_turf.at(static_cast<std::size_t>(m_playerSector)))).name()
+                : "?";
+        pushEvent(std::format("ENTERED SECTOR {}: {} [{}]", m_playerSector + 1,
+                              m_world.district(m_playerSector).name, turf));
     }
 }
 

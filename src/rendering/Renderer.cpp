@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "core/Log.h"
+#include "core/Noise.h"
 #include "narrative/Canon.h"
 #include "rendering/PixelFont.h"
 #include "simulation/Simulation.h"
@@ -19,6 +20,7 @@ constexpr SDL_Color kYellow = {255, 255, 0, 255};
 constexpr SDL_Color kDim = {160, 160, 160, 255};
 constexpr SDL_Color kHeart = {255, 0, 0, 255};
 constexpr SDL_Color kTrace = {255, 255, 0, 255};
+constexpr SDL_Color kRust = {130, 110, 40, 255};
 
 constexpr int kHudH = 26;
 constexpr int kFooterH = 44;
@@ -150,6 +152,41 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
 
     // Biome art per district theme, dim so gameplay marks pop.
     const std::string& note = d.note;
+    const bool blink = (SDL_GetTicks() / 500) % 2 == 0;
+    // Noise ground first: organic patches/paths per theme (visual only,
+    // deterministic per seed + sector, never touches sim state).
+    {
+        noise::Preset gp{4, 0.5f, 2.0f, 0.6f, 16.0f};
+        float thresh = 0.22f;
+        SDL_Color patch = kDim;
+        const bool streaks = (note == "antenna fields");
+        if (streaks) {
+            gp = noise::Preset{3, 0.5f, 2.2f, 0.9f, 22.0f};
+            thresh = 0.72f;
+        } else if (note == "industrial sector") {
+            gp = noise::Preset{5, 0.55f, 2.0f, 0.8f, 13.0f};
+            thresh = 0.18f;
+            patch = kRust;
+        } else if (note == "data haven") {
+            gp = noise::Preset{3, 0.5f, 2.4f, 0.4f, 9.0f};
+            thresh = 0.3f;
+        }
+        const std::uint64_t gseed = sim.seed() ^ (static_cast<std::uint64_t>(here + 1) * 0x9e3779b97f4a7c15ULL);
+        constexpr int kCell = 6;
+        for (int gy = ay + 16; gy < ay + ah - 8; gy += kCell) {
+            for (int gx = ax + 6; gx < ax + aw - 8; gx += kCell) {
+                const float wx =
+                    static_cast<float>(gx - ax) / static_cast<float>(aw) * sim::Simulation::kAreaW;
+                const float wy =
+                    static_cast<float>(gy - ay) / static_cast<float>(ah) * sim::Simulation::kAreaH;
+                const float v = streaks ? noise::ridged(gseed, wx, wy, gp)
+                                        : noise::warped(gseed, wx, wy, gp);
+                if (v > thresh) {
+                    fillRect(gx, gy, 2, 2, patch);
+                }
+            }
+        }
+    }
     if (note == "market sprawl") {
         for (int i = 0; i < 12; ++i) {
             const int sx = ax + 12 + decor(i, 0) % (aw - 30);
@@ -166,7 +203,9 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
             const int base = ay + ah - 24 - decor(i, 2) % 20;
             SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
             SDL_RenderDrawLine(m_renderer, sx, top, sx, base);
-            fillRect(sx - 1, top - 2, 3, 3, kYellow);
+            if (blink) {
+                fillRect(sx - 1, top - 2, 3, 3, kYellow);
+            }
         }
     } else if (note == "night clinic row") {
         for (int i = 0; i < 6; ++i) {
@@ -175,7 +214,7 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
             SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
             SDL_Rect r{sx, sy, 10, 8};
             SDL_RenderDrawRect(m_renderer, &r);
-            fillRect(sx + 2, sy + 2, 6, 4, kYellow);
+            fillRect(sx + 2, sy + 2, 6, 4, blink ? kYellow : kDim);
         }
     } else if (note == "port authority") {
         for (int i = 0; i < 6; ++i) {
@@ -198,6 +237,15 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
             const int sx = ax + 20 + decor(i, 0) % (aw - 50);
             fillRect(sx, ay + ah - 40, 8, 20, kDim);
         }
+        // Drifting rain (clock-based, visual only).
+        for (int i = 0; i < 12; ++i) {
+            const int rx = ax + 10 + decor(i, 5) % (aw - 20);
+            const int span = ah - 48;
+            const int ry =
+                ay + 24 + (span > 0 ? (static_cast<int>(SDL_GetTicks() / 60) + i * 53) % span : 0);
+            SDL_SetRenderDrawColor(m_renderer, kDim.r, kDim.g, kDim.b, kDim.a);
+            SDL_RenderDrawLine(m_renderer, rx, ry, rx - 1, ry + 3);
+        }
     } else if (note == "residential stacks") {
         for (int r = 0; r < 3; ++r) {
             for (int c = 0; c < 8; ++c) {
@@ -206,16 +254,30 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
                 fillRect(sx, sy, 9, 7, kDim);
             }
         }
-    } else {  // data haven and anything future: server-light scatter
+    } else {  // data haven and anything future: twinkling server lights
         for (int i = 0; i < 24; ++i) {
             const int sx = ax + 10 + decor(i, 0) % (aw - 20);
             const int sy = ay + 24 + decor(i, 1) % (ah - 44);
+            if ((decor(i, 3) + (blink ? 1 : 0)) % 2 != 0) {
+                continue;
+            }
             fillRect(sx, sy, 2, 2, (decor(i, 2) % 4 == 0) ? kYellow : kDim);
         }
     }
 
     // Sector title + minimap ring (visited light up, current in brackets).
-    drawText(std::format("SECTOR {}: {}", here + 1, d.name), ax + 4, ay + 3, 1, kWhite);
+    std::string turfShort = "?";
+    {
+        const int turf = sim.turf(here);
+        if (turf >= 0 && static_cast<std::size_t>(turf) < sim.factions().size()) {
+            const std::string& fname =
+                sim.factions()[static_cast<std::size_t>(turf)].name();
+            const std::size_t sp = fname.find(' ');
+            turfShort = (sp == std::string::npos) ? fname : fname.substr(0, sp);
+        }
+    }
+    drawText(std::format("SECTOR {}: {} [{}]", here + 1, d.name, turfShort), ax + 4, ay + 3, 1,
+             kWhite);
     {
         int mx = ax + aw - 4;
         for (int i = n - 1; i >= 0; --i) {
@@ -229,8 +291,6 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
             mx -= 2;
         }
     }
-
-    const bool blink = (SDL_GetTicks() / 500) % 2 == 0;
 
     // Traces: yellow squares, blink when not found (this sector only).
     for (const auto& t : sim.traces()) {
@@ -289,8 +349,8 @@ void Renderer::drawWorldArea(const sim::Simulation& sim) {
     {
         const char* rich = d.wealth > 66 ? "RICH" : (d.wealth < 33 ? "POOR" : "MIXED");
         const char* busy = d.bustle > 66 ? "BUSY" : (d.bustle < 33 ? "QUIET" : "STEADY");
-        drawText(std::format("* SECTOR {}: {} - {} ({}/{})", here + 1, d.name, d.note, rich,
-                             busy),
+        drawText(std::format("* SECTOR {}: {} [{}] - {} ({}/{})", here + 1, d.name, turfShort,
+                             d.note, rich, busy),
                  ax + 4, ay + ah - 10, 1, kWhite);
     }
 

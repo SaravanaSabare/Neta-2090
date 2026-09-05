@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <string>
 
+#include "core/Noise.h"
 #include "core/Random.h"
 #include "save/SaveSystem.h"
 #include "simulation/Simulation.h"
@@ -279,6 +280,66 @@ int main() {
         sim.setPlayerIntent({1.0f, 0.0f});
         sim.tick(neta::sim::Simulation::kTickDt);
         check(sim.playerSector() == 0, "ring: east edge from 4 wraps to 0");
+    }
+
+    {
+        // Noise: deterministic, bounded, sane math, useful slope answers.
+        const neta::noise::Preset p{4, 0.5f, 2.0f, 0.6f, 16.0f};
+        check(neta::noise::noise2(482913, 3.25f, 7.75f) ==
+                  neta::noise::noise2(482913, 3.25f, 7.75f),
+              "noise: same inputs -> same value");
+        check(neta::noise::warped(482913, 3.25f, 7.75f, p) !=
+                  neta::noise::warped(777, 3.25f, 7.75f, p),
+              "noise: different seeds diverge");
+        bool bounded = true;
+        for (int i = 0; i < 64; ++i) {
+            const float v = neta::noise::warped(
+                482913, static_cast<float>(i) * 1.7f, static_cast<float>(i) * 0.6f, p);
+            if (v < -1.0f || v > 1.0f) {
+                bounded = false;
+            }
+        }
+        check(bounded, "noise: warped stays in [-1, 1]");
+        const neta::noise::Preset one{1, 0.5f, 2.0f, 0.0f, 16.0f};
+        check(neta::noise::fbm(99, 5.5f, 2.5f, one) == neta::noise::noise2(99, 5.5f / 16.0f, 2.5f / 16.0f),
+              "noise: 1-octave fbm equals base noise");
+        check(neta::noise::isFlat(7, 1.0f, 1.0f, p, 1.0f, 100.0f),
+              "noise: huge limit is always flat");
+        check(!neta::noise::isFlat(7, 1.0f, 1.0f, p, 1.0f, 0.0f),
+              "noise: zero limit is never flat");
+    }
+
+    {
+        // Turf + owners: valid, deterministic, same-district owners.
+        neta::sim::Simulation a;
+        neta::sim::Simulation b;
+        a.generate(482913);
+        b.generate(482913);
+        bool turfOk = true;
+        for (int s = 0; s < 5; ++s) {
+            turfOk = turfOk && a.turf(s) == b.turf(s) && a.turf(s) >= 0 && a.turf(s) < 4;
+        }
+        check(turfOk, "turf: same seed -> same valid factions");
+        bool ownersOk = a.world().locations().size() == b.world().locations().size();
+        for (std::size_t i = 0; ownersOk && i < a.world().locations().size(); ++i) {
+            const int o = a.placeOwner(static_cast<int>(i));
+            ownersOk = ownersOk && o >= 0 && o == b.placeOwner(static_cast<int>(i)) &&
+                       a.npcs()[static_cast<std::size_t>(o)].district() ==
+                           a.world().locations()[i].district;
+        }
+        check(ownersOk, "city: owners valid, deterministic, same district");
+        // Walkers name the place they keep.
+        bool mindOk = false;
+        for (std::size_t i = 5; i < a.npcs().size() && !mindOk; ++i) {
+            a.travelTo(a.npcs()[i].district(), {50.0f, 28.0f});
+            a.teleportPlayer(a.npcLocalPos(i));
+            auto r = a.interact();
+            if (r.kind == neta::sim::Simulation::InteractKind::Talk &&
+                r.text.find("MIND") != std::string::npos) {
+                mindOk = true;
+            }
+        }
+        check(mindOk, "pop: walkers name the place they keep");
     }
 
     {

@@ -91,6 +91,9 @@ public:
     // Ring travel: districts are sectors 0-4, east/west edges wrap around.
     int playerSector() const { return m_playerSector; }
     int visited(int sector) const { return m_visited.at(static_cast<std::size_t>(sector)); }
+    // Faction turf per sector (static from seed) + place owners (npc index).
+    int turf(int sector) const { return m_turf.at(static_cast<std::size_t>(sector)); }
+    int placeOwner(int locId) const { return m_placeOwner.at(static_cast<std::size_t>(locId)); }
     // Test helper: move player instantly (clamped).
     void teleportPlayer(entities::Vec2 p) {
         m_player.setPosition(p);
@@ -144,6 +147,9 @@ private:
     // Ring position: which sector screen the player is on + visited marks.
     int m_playerSector = 0;
     std::vector<int> m_visited;
+    // Living city statics (rebuilt from seed, never saved).
+    std::vector<int> m_turf;        // faction id per sector
+    std::vector<int> m_placeOwner;  // npc index per location id
 };
 
 }  // namespace neta::sim
