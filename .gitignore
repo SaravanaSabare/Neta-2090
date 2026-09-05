@@ -3,6 +3,9 @@ build/
 out/
 install/
 
+# Local-only AI session memory (stays on this machine, never pushed)
+HANDOFF.md
+
 # CMake generated files (when building outside build/)
 CMakeCache.txt
 CMakeFiles/
